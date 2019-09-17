@@ -38,7 +38,7 @@ The observations for this paper are derived from the National Health and Nutriti
 ##### TABLE 1
 ```{r categorical variables, echo=F, message=F, warning=F,fig.align='center'}
 # categorical variables
-data2 = read_csv("categoricalvariabletable.csv")
+data2 = read_csv("Categorical_Variables_Summary.csv")
 data2 <- data2
 kable(data2, booktabs = T) %>%
   kable_styling() %>%
@@ -65,19 +65,19 @@ To determine the best target audience for a computer manufacturing business, we 
 
 ##### FIGURE 1
 ```{r NA chart,echo=F,message=F,warning=F,fig.align='center'}
-BMX <- read.csv("BMX_I.csv")
+BMX <- read.csv("Body_Measurements.csv")
 BMX <- BMX %>%
   select(SEQN, BMI=BMXBMI,`Upper Leg Length` =BMXLEG,`Upper Arm Length` = BMXARML,`Arm Circumference` = BMXARMC,`Waist Circumference` = BMXWAIST,`Avg Sagittal Abdominal Diameter` = BMDAVSAD)
 
-DEMO <- read.csv("DEMO_I.csv")
+DEMO <- read.csv("Demographics.csv")
 DEMO <- DEMO %>%
   select(SEQN,Gender=RIAGENDR,Age=RIDAGEYR,Race=RIDRETH3,`Military Status`=DMQMILIZ,`Country of Birth`=DMDBORN4,`Education Level 6-19`=DMDEDUC3,`Education Level 20+`=DMDEDUC2,`Marital Status`=DMDMARTL,`Family Language`=FIALANG,`People in Household`=DMDHHSIZ,`Family Income`=INDFMIN2)
 
-DR2TOT <- read.csv("DR2TOT_I.csv")
+DR2TOT <- read.csv("Dietary_Day_Two.csv")
 DR2TOT <- DR2TOT %>%
   select(SEQN, Dietary = DR2TKCAL)
 
-PAQ <- read.csv("PAQ_I.csv")
+PAQ <- read.csv("Physical_Activity.csv")
 PAQ <- PAQ %>% 
   select(SEQN,`TV Hours`=PAQ710,`Computer Hours`=PAQ715,`Vigorous Activity`=PAQ605)
 
@@ -116,7 +116,7 @@ Furthermore, we would like to determine whether we can predict the BMI of someon
 
 ##### TABLE 2
 ```{r five number summary, echo=F, message=F,fig.align='center'}
-data = read_csv("fivenumbersummary.csv")
+data = read_csv("Numerical_Variable_Summary.csv")
 kable(data) %>%
   kable_styling(bootstrap_options = "striped", full_width = T, position = "float_left") %>%
   column_spec(2, border_left = T) %>% 
@@ -138,8 +138,8 @@ The first model (age 20+ model) uses only simple predictor variables. At first, 
 
 ##### FIGURE 2
 ```{r age 20+ coeffs, echo=F, warning=F, message=F,fig.align='center'}
-demo = read_csv('DEMO_I.csv')
-comp = read_csv('PAQ_I.csv')
+demo = read_csv('Demographics.csv')
+comp = read_csv('Physical_Activity.csv')
 
 comp2= comp %>%
   select(SEQN,comp_use=PAQ715,tv_use=PAQ710,vigorous_work=PAQ605)
@@ -257,8 +257,8 @@ The second model (age 12-19) also uses exclusively simple predictor variables. T
 
 ##### FIGURE 3
 ```{r age 12-19 coeffs, echo=F, warning=F,message=F,fig.align='center'}
-demo = read_csv('DEMO_I.csv')
-comp = read_csv('PAQ_I.csv')
+demo = read_csv('Demographics.csv')
+comp = read_csv('Physical_Activity.csv')
 
 comp2= comp %>%
   select(SEQN,comp_use=PAQ715,tv_use=PAQ710,physical_activity=PAQ722)
@@ -372,7 +372,7 @@ Without a doubt, and unsurprisingly, TV usage is the most influential variable f
 ##### FIGURE 4
 ```{r comp and tv usage, echo=F, warning=F, message=F,fig.align='center'}
 
-comp = read_csv('PAQ_I.csv')
+comp = read_csv('Physical_Activity.csv')
 
 comp2 = comp %>%
   select(SEQN,comp_use=PAQ715,tv_use=PAQ710,vigorous_work=PAQ605)
@@ -423,9 +423,9 @@ Our methodology to find the best predictors of BMI follows a similar approach to
 ##### TABLE 3
 ```{r train and test chart, echo=F, warning=F,message=F,fig.align='center'}
 
-DEMO = read_csv("DEMO_I.csv")
-DR2TOT = read_csv("DR2TOT_I.csv")
-BMX = read_csv("BMX_I.csv")
+DEMO = read_csv("Demographics.csv")
+DR2TOT = read_csv("Dietary_Day_Two.csv")
+BMX = read_csv("Body_Measurements.csv")
 # selecting potential variables 
 DR2TOT_filtered = DR2TOT %>% select(SEQN, Energy = DR2TKCAL, Protein = DR2TPROT, Carbohydrate = DR2TCARB, `Total Sugars` =  DR2TSUGR,`Dietary Fiber` = DR2TFIBE, `Total Fat`=DR2TTFAT, `Total Polyunsaturated Fatty Acids` = DR2TPFAT, Cholesterol =DR2TCHOL, `Alpha-carotene` = DR2TACAR, `Beta-cryptoxanthin` =DR2TCRYP,`Thiamin (Vitamin B1)`= DR2TVB1, `Riboflavin (Vitamin B2)` = DR2TVB2,Niacin = DR2TNIAC,`Vitamin C` =DR2TVC,`Vitamin D` = DR2TVD, `Sodium` = DR2TSODI, Caffeine = DR2TCAFF) 
 
@@ -668,11 +668,11 @@ Evaluating the standardized variable coefficients (see Figure 5), we notice that
 ##### FIGURE 6
 ```{r BMI arm circum., echo=F,warning=F,message=F,fig.align='center'}
 
-DEMO = read_csv("DEMO_I.csv")
+DEMO = read_csv("Demographics.csv")
 
-DR2TOT = read_csv("DR2TOT_I.csv")
+DR2TOT = read_csv("Dietary_Day_Two.csv")
 
-BMX = read_csv("BMX_I.csv")
+BMX = read_csv("Body_Measurements.csv")
 
 DR2TOT_filtered = DR2TOT %>% 
   select(SEQN, DR2TKCAL, DR2TPROT, DR2TCARB, DR2TSUGR, DR2TFIBE, DR2TTFAT, DR2TPFAT, DR2TCHOL, DR2TACAR, DR2TCRYP, DR2TVB1, DR2TVB2, DR2TNIAC,DR2TVC,DR2TVD,DR2TSODI,DR2TCAFF)
