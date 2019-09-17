@@ -1,0 +1,735 @@
+---
+title: "Final Paper"
+author: "STOR 320 Group 01"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+#Put Necessary Libraries Here
+library(tidyverse)
+library(ggplot2)
+library(modelr)
+library(purrr)
+library(broom)
+library(glmnet)
+library(Hmisc)
+library(reshape2)
+library(knitr)
+library(kableExtra)
+library(ggrepel)
+library(psycho)
+```
+
+# INTRODUCTION
+
+If we were a computer manufacturing company or business, to what kind of audience should we advertise our computers in order to maximize earnings and revenue? The answer to this question would allow companies and businesses to attract the best customers for their product. After compiling and analyzing data, companies can strategize their marketing and effectively construct new campaigns to target key demographics that will earn the companies the most revenue. Companies strive to enact efficient sales campaigns and practical audience outreach. Investigating the best indicators of one’s computer usage based on our models, we believe companies can succeed in these goals.
+
+Normally, to measure body mass index (BMI), a person’s weight in kilograms is divided by the square of his or her height in meters. However, it’s not always possible to take people’s height or weight, for they might be bedridden or paraplegic. Based on this real-life problem, we created a second question to match this scenario: if we are unable to calculate the weight or height of an individual, how can we predict the body mass index using other variables? The answer to this question would be beneficial to doctors, who would use new methods to predict BMI for bedridden patients. The BMI of a patient provides doctors with an idea of the patient’s diet, susceptibility to disease, and overall health. 
+
+
+# DATA
+
+
+The observations for this paper are derived from the National Health and Nutrition Examination Survey (NHANES) for 2015 to 2016, administered by the Center for Disease Control and Prevention (CDC). The survey targets the non-institutionalised US resident population. The subgroups examined include Hispanic people, Non-Hispanic Black people, Non-Hispanic Asian people, Non-Hispanic White people, and Other (multiracial but Non-Hispanic). The CDC collects data by conducting home interviews, clinical tests, and medical exams. During the home interview, a participant is asked questions about their health, disease history, and diet. The clinical tests collect physical measurements of participants, whereas the medical exams collect laboratory information. 
+
+##### TABLE 1
+```{r categorical variables, echo=F, message=F, warning=F,fig.align='center'}
+# categorical variables
+data2 = read_csv("categoricalvariabletable.csv")
+data2 <- data2
+kable(data2, booktabs = T) %>%
+  kable_styling() %>%
+  pack_rows("Gender (0-150)", 1, 2) %>%
+  pack_rows("Age in years (0-150)", 3,4) %>%
+  pack_rows("Race (0-150)", 5,10) %>%
+  pack_rows("Total Number of People in the Family (0-150)", 11,17) %>%
+  pack_rows("Country of Birth (0-150)", 18, 19) %>%
+  pack_rows("Education Level (20-150)", 20, 24) %>%
+  pack_rows("Pooled Education Level (6-19)", 25,28) %>%
+  pack_rows("Annual Family Income (0-150)", 29,40) %>%
+  pack_rows("Pooled Annual Family Income (0-150)", 41,43) %>%
+  pack_rows("Marital Status (20-150)", 44, 49) %>%
+  pack_rows("Language of Family Interview (0-150)", 50, 51) %>%
+  pack_rows("Total Number of People in the Household (0-150)", 52,58) %>%
+  pack_rows("Vigorous Work Activity (0-150)", 59, 60) %>%
+  pack_rows("Hours spent watching TV/videos in the past 30 days (2-150)", 61, 67) %>%
+  pack_rows("Hours of Computer Usage in the past 30 days (2-150)", 68, 73) %>%
+  scroll_box(width = "100%", height = "310px")
+```
+
+
+To determine the best target audience for a computer manufacturing business, we analyzed variables from both the demographic and the questionnaire datasets. Specifically, we use data concerning computer usage, TV usage, vigorous work activity, gender, age, race, veteran/military status, birth country, education level, marital status, language, and family income. For details on these variables, see Table 1. Certain variables only apply to specific age groups. Therefore, it is unnecessary to include every variable without obtaining at least one missing value per person. In Figure 1, which displays the NA values of our dataset, the four rows on the bottom illustrate the issue. The two education groups are mutually exclusive because of their target age ranges, the military variable only applies to those 17 and older, and marital status only applies to those 20 and older. To ameliorate the situation, we split the data over two models: one for ages 20 and higher (4,269 observations), and another for ages 12-19 (1,387 observations). For both models, family income is pooled into three categories: low ($0-$25k), middle ($25k-$75k), and high income ($75k+). For the age 12-19 model, education is pooled into 4 categories (elementary, middle, high school, and high school graduate).
+
+##### FIGURE 1
+```{r NA chart,echo=F,message=F,warning=F,fig.align='center'}
+BMX <- read.csv("BMX_I.csv")
+BMX <- BMX %>%
+  select(SEQN, BMI=BMXBMI,`Upper Leg Length` =BMXLEG,`Upper Arm Length` = BMXARML,`Arm Circumference` = BMXARMC,`Waist Circumference` = BMXWAIST,`Avg Sagittal Abdominal Diameter` = BMDAVSAD)
+
+DEMO <- read.csv("DEMO_I.csv")
+DEMO <- DEMO %>%
+  select(SEQN,Gender=RIAGENDR,Age=RIDAGEYR,Race=RIDRETH3,`Military Status`=DMQMILIZ,`Country of Birth`=DMDBORN4,`Education Level 6-19`=DMDEDUC3,`Education Level 20+`=DMDEDUC2,`Marital Status`=DMDMARTL,`Family Language`=FIALANG,`People in Household`=DMDHHSIZ,`Family Income`=INDFMIN2)
+
+DR2TOT <- read.csv("DR2TOT_I.csv")
+DR2TOT <- DR2TOT %>%
+  select(SEQN, Dietary = DR2TKCAL)
+
+PAQ <- read.csv("PAQ_I.csv")
+PAQ <- PAQ %>% 
+  select(SEQN,`TV Hours`=PAQ710,`Computer Hours`=PAQ715,`Vigorous Activity`=PAQ605)
+
+join1 <- left_join(DEMO,BMX,by='SEQN')
+join2 <- left_join(join1,DR2TOT,by='SEQN')
+join3 <- left_join(join2,PAQ,by='SEQN') %>%
+  select(-SEQN)
+
+row.plot <- join3 %>%
+  select(-Race,-`People in Household`,-Gender,-`Country of Birth`,-Age) %>%
+  mutate(id = row_number()) %>%
+  gather(-id, key = "key", value = "val") %>%
+  mutate(isna = is.na(val)) %>%
+  
+  
+  ggplot(aes(reorder(key, -isna), id, fill = isna)) +
+  geom_raster(alpha=0.6) +
+  scale_fill_manual(name = "",
+        values = c('skyblue', 'red'),
+        labels = c("Present", "Missing")) +
+  scale_y_discrete(limits = seq(500,9971,by=1000), labels = seq(500,9971,by=1000)) +
+  labs(x = "Variable Name",
+       y = "Respondent Number")+
+  ggtitle("Missing Values for Each Variable") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))+
+  coord_flip()
+  
+
+row.plot
+
+```
+
+
+Furthermore, we would like to determine whether we can predict the BMI of someone who cannot get their height and weight. To accomplish this, we combine and analyze the variables in the dietary, examination, and demographics datasets which contains 5,353 observations. Each observation in this combined dataset represents a participant of the NHANES survey who has responded to the dietary and demographic portions of the survey and has allowed his or her body measurements to be taken by the Medical Examination Center. We believe the data will be the most relevant because it involves health and body measurements, as well as demographic information that may indicate certain lifestyles or genetic background. Within the dietary dataset, we focus on one’s nutritional intake over a single day, including total energy (kcal), protein (g), carbohydrates (g), sugar (g), fiber (g), and fat (g). Within the examination dataset, we expect the most influential variables to include upper arm length (cm), arm circumference (cm), and waist circumference (cm). From the demographics dataset, we believe that gender, race, and age will be most indicative of BMI. For individuals who are 80 and older, their age is topcoded at eighty due to a possible disclosure risk. See table 2 for more details on the continuous variables.
+
+##### TABLE 2
+```{r five number summary, echo=F, message=F,fig.align='center'}
+data = read_csv("fivenumbersummary.csv")
+kable(data) %>%
+  kable_styling(bootstrap_options = "striped", full_width = T, position = "float_left") %>%
+  column_spec(2, border_left = T) %>% 
+  row_spec(c(1,3,5),background = "#ebf3ff")
+  
+```  
+
+
+
+# RESULTS
+
+
+
+
+
+Regarding our question on computer usage, the first step of our methodology involves splitting the data into a vector containing computer usage data (our desired output) as a binary variable and a matrix containing every predictor variable. The binary categories for computer usage are described as follows, {1 = those who use a computer for two or more hours; 0 = those who use a computer for less than one hour}. Note that the middle range of observations (those who use a computer for one to two hours) is left out. Every relevant variable from the dataset, excluding age, is considered a factor variable and is, therefore, unfurled into multiple binary variables. Then, by creating five regularized and cross-validated models with differing alpha values, appropriate alpha and lambda values are determined. Finally, the ideal parameters are applied to the glmnet() function in R and the coefficients are optimized.
+
+The first model (age 20+ model) uses only simple predictor variables. At first, we tested a model with all possible two-way interactions, resulting in a prediction accuracy of 69.17%. However, when using a similar model excluding two-way interactions, the difference in prediction accuracy is negligible. Precisely, the simple model produces an accuracy of 68.45% and the difference between model accuracies is 0.72%. The trial models (using the simple predictors) determine that, ideally, alpha = 1 and lambda = 0.0104007. In other words, lasso regularization generates the best results. 
+
+##### FIGURE 2
+```{r age 20+ coeffs, echo=F, warning=F, message=F,fig.align='center'}
+demo = read_csv('DEMO_I.csv')
+comp = read_csv('PAQ_I.csv')
+
+comp2= comp %>%
+  select(SEQN,comp_use=PAQ715,tv_use=PAQ710,vigorous_work=PAQ605)
+demo2= demo %>%
+  select(SEQN,gender=RIAGENDR,age=RIDAGEYR,race=RIDRETH3,military=DMQMILIZ,birth_country=DMDBORN4,education=DMDEDUC2,marriage=DMDMARTL,language=FIALANG,people_in_house=DMDHHSIZ,family_income=INDFMIN2)
+
+
+#DOES NOT INCLUDE AGE UNDER 20!
+demo_comp = left_join(demo2,comp2,by='SEQN') %>%
+  na.omit() %>%
+  filter(
+    family_income %in% c(1,2,3,4,5,6,7,8,9,10,14,15),
+    vigorous_work<3,
+    marriage<8,
+    education<6,
+    birth_country<3,
+    military<3,
+    comp_use<10,
+    tv_use<10,comp_use!=1
+    ) %>%
+  select(-SEQN) 
+
+
+
+demo_comp$comp_use=ifelse(demo_comp$comp_use %in% c(0,8),0,1)
+
+
+demo_comp$family_income=ifelse(demo_comp$family_income %in% c(1,2,3,4,5),'Low income',demo_comp$family_income)
+demo_comp$family_income=ifelse(demo_comp$family_income %in% c(6,7,8,9,10),'Middle income',demo_comp$family_income)
+demo_comp$family_income=ifelse(demo_comp$family_income %in% c(14,15),'High income',demo_comp$family_income)
+
+
+factors=c(1,3,4,5,6,7,8,9,10,12)
+
+demo_comp[factors]=lapply(demo_comp[factors],as.factor)
+
+
+
+
+y=demo_comp$comp_use
+X=model_matrix(demo_comp,comp_use~.)[,-1]
+var.names=names(X)
+
+set.seed(216)
+cvmod.0=cv.glmnet(y=as.factor(y),x=as.matrix(X),alpha=0,
+                  family="binomial",type.measure="class")
+set.seed(216)
+cvmod.25=cv.glmnet(y=as.factor(y),x=as.matrix(X),alpha=0.25,
+                   family="binomial",type.measure="class")
+set.seed(216)
+cvmod.5=cv.glmnet(y=as.factor(y),x=as.matrix(X),alpha=0.5,
+                  family="binomial",type.measure="class")
+set.seed(216)
+cvmod.75=cv.glmnet(y=as.factor(y),x=as.matrix(X),alpha=0.75,
+                   family="binomial",type.measure="class")
+set.seed(216)
+cvmod.1=cv.glmnet(y=as.factor(y),x=as.matrix(X),alpha=1,
+                  family="binomial",type.measure="class")
+
+CV.0.ERROR=cvmod.0$cvm[which(cvmod.0$lambda==cvmod.0$lambda.1se)]
+CV.25.ERROR=cvmod.25$cvm[which(cvmod.25$lambda==cvmod.25$lambda.1se)]
+CV.5.ERROR=cvmod.5$cvm[which(cvmod.5$lambda==cvmod.5$lambda.1se)]
+CV.75.ERROR=cvmod.75$cvm[which(cvmod.75$lambda==cvmod.75$lambda.1se)]
+CV.1.ERROR=cvmod.1$cvm[which(cvmod.1$lambda==cvmod.1$lambda.1se)]
+
+MOD.RESULT=tibble(alpha=c(0,0.25,0.5,0.75,1),
+                  lambda=c(cvmod.0$lambda.1se,cvmod.25$lambda.1se,
+                           cvmod.5$lambda.1se,cvmod.75$lambda.1se,
+                           cvmod.1$lambda.1se),
+                  CV.Error=c(CV.0.ERROR,CV.25.ERROR,CV.5.ERROR,
+                             CV.75.ERROR,CV.1.ERROR))
+
+
+best.alpha=MOD.RESULT$alpha[which.min(MOD.RESULT$CV.Error)]
+best.lambda=MOD.RESULT$lambda[which.min(MOD.RESULT$CV.Error)]
+
+best.mod=glmnet(y=as.factor(y),x=as.matrix(X),
+                nlambda=1,lambda=best.lambda,alpha=best.alpha,
+                family="binomial")
+best.coef=as.matrix(coef(best.mod))
+
+
+best.coef=as.data.frame(best.coef)
+best.coef$names=as.factor(rownames(best.coef))
+best.coef$names = ordered(best.coef$names, levels=c('marriage6','marriage5','race6','race3','race7','people_in_house7','people_in_house5','people_in_house6','vigorous_work','tv_use1','tv_use3','tv_use4','tv_use5','language2','education3','education4','education5'))
+best.coef$positive = best.coef$s0>0
+
+coef.plot1 = best.coef %>%
+  filter(s0!=0,names!='(Intercept)')
+
+ggplot(coef.plot1, aes(x=names,y=s0,label=round(s0,3)))+
+  geom_bar(stat="identity",aes(fill=positive)) +
+  geom_text_repel(nudge_y=-5,size=3.22,aes(color=positive),segment.alpha=0)+
+  scale_y_continuous(limits=c(-.8,0.9))+
+  coord_flip() +
+  theme_bw() +
+  theme(legend.position = "none") +
+  scale_x_discrete(labels=c("Marital Status - Living with Partner","Marital Status - Never Married","Race - Asian","Race - White","Race - Other","# in Household - 7","# in Household - 5","# in Household - 6","Vigorous Work Activity","TV Hours - 1","TV Hours - 3","TV Hours - 4","TV Hours - 5+","Language - Spanish","Education - HS Graduate","Education - Some College","Education - College Graduate")) +
+  xlab("Variables") +
+  ylab("Model Coefficients") +
+  labs(caption = "Intercept = -0.72565952")+
+  ggtitle("Non-Zero Variable Coefficients for Model Age 20+")+
+  scale_fill_manual(values=c("red", "navyblue")) +
+  scale_color_manual(values=c("red", "navyblue")) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+
+```
+
+Analyzing the coefficients of the age 20+ model, we see which variables have a significant relationship with computer usage; regularization reduces several variables coefficients to 0, revealing the more impactful predictor variables (see Figure 2). By far, the most powerful predictor in this model is education level. Adults with higher levels of education likely require a computer for their work and are, therefore, likely to use their computer a significant amount. The model also shows that those who watch a large amount of TV have a higher likelihood of using computers frequently. Interestingly, if one never marries, they are significantly more likely to use their computers frequently. On the other side of the equation, those who live with a low income, were surveyed in Spanish, or have a large number of people in their household tend to use a computer less often. Those with low income may not be able to afford computers, and those with a large number of people in their household are unlikely to spend enough time interacting with other people.
+
+
+
+The second model (age 12-19) also uses exclusively simple predictor variables. The age 12-19 model produces a larger difference between accuracies when including or excluding the two-way interactions. However, we choose to err on the side of less complex models. With two-way variables, the accuracy of the final model is 69.57%, while the simple model predicts with 67.12% accuracy. The resulting difference in accuracy is 2.45%. The trial models find that the ideal alpha and lambda values are 0.75 and 0.0202695 respectively, meaning elastic regularization produces ideal results. See Figure 3 for the simple model's coefficients.
+
+##### FIGURE 3
+```{r age 12-19 coeffs, echo=F, warning=F,message=F,fig.align='center'}
+demo = read_csv('DEMO_I.csv')
+comp = read_csv('PAQ_I.csv')
+
+comp2= comp %>%
+  select(SEQN,comp_use=PAQ715,tv_use=PAQ710,physical_activity=PAQ722)
+demo2= demo %>%
+  select(SEQN,gender=RIAGENDR,age=RIDAGEYR,race=RIDRETH3,birth_country=DMDBORN4,education=DMDEDUC3,language=FIALANG,people_in_house=DMDHHSIZ,family_income=INDFMIN2)
+
+
+#DOES NOT INCLUDE AGE over 20, under 12!
+demo_comp = left_join(demo2,comp2,by='SEQN') %>%
+  na.omit() %>%
+  filter(
+    family_income %in% c(1,2,3,4,5,6,7,8,9,10,14,15),
+    education<16,
+    physical_activity<3,
+    birth_country<3,
+    comp_use<10,
+    tv_use<10,comp_use!=1
+    ) %>%
+  select(-SEQN) 
+
+
+
+demo_comp$comp_use=ifelse(demo_comp$comp_use %in% c(0,8),0,1)
+
+
+demo_comp$family_income=ifelse(demo_comp$family_income %in% c(1,2,3,4,5),'Low income',demo_comp$family_income)
+demo_comp$family_income=ifelse(demo_comp$family_income %in% c(6,7,8,9,10),'Middle income',demo_comp$family_income)
+demo_comp$family_income=ifelse(demo_comp$family_income %in% c(14,15),'High income',demo_comp$family_income)
+
+demo_comp$education=ifelse(demo_comp$education %in% c(0,1,2,3,4,5),'Elementary',demo_comp$education)
+demo_comp$education=ifelse(demo_comp$education %in% c(6,7,8),'Middle',demo_comp$education)
+demo_comp$education=ifelse(demo_comp$education %in% c(9,10,11,12),'High',demo_comp$education)
+demo_comp$education=ifelse(demo_comp$education %in% c(13,14,15),'Graduated',demo_comp$education)
+
+factors=c(1,3,4,5,6,7,8,9,10)
+
+demo_comp[factors]=lapply(demo_comp[factors],as.factor)
+
+
+y=demo_comp$comp_use
+X=model_matrix(demo_comp,comp_use~.)[,-1]
+var.names=names(X)
+
+set.seed(216)
+cvmod.0=cv.glmnet(y=as.factor(y),x=as.matrix(X),alpha=0,
+                  family="binomial",type.measure="class")
+set.seed(216)
+cvmod.25=cv.glmnet(y=as.factor(y),x=as.matrix(X),alpha=0.25,
+                   family="binomial",type.measure="class")
+set.seed(216)
+cvmod.5=cv.glmnet(y=as.factor(y),x=as.matrix(X),alpha=0.5,
+                  family="binomial",type.measure="class")
+set.seed(216)
+cvmod.75=cv.glmnet(y=as.factor(y),x=as.matrix(X),alpha=0.75,
+                   family="binomial",type.measure="class")
+set.seed(216)
+cvmod.1=cv.glmnet(y=as.factor(y),x=as.matrix(X),alpha=1,
+                  family="binomial",type.measure="class")
+
+CV.0.ERROR=cvmod.0$cvm[which(cvmod.0$lambda==cvmod.0$lambda.1se)]
+CV.25.ERROR=cvmod.25$cvm[which(cvmod.25$lambda==cvmod.25$lambda.1se)]
+CV.5.ERROR=cvmod.5$cvm[which(cvmod.5$lambda==cvmod.5$lambda.1se)]
+CV.75.ERROR=cvmod.75$cvm[which(cvmod.75$lambda==cvmod.75$lambda.1se)]
+CV.1.ERROR=cvmod.1$cvm[which(cvmod.1$lambda==cvmod.1$lambda.1se)]
+
+MOD.RESULT=tibble(alpha=c(0,0.25,0.5,0.75,1),
+                  lambda=c(cvmod.0$lambda.1se,cvmod.25$lambda.1se,
+                           cvmod.5$lambda.1se,cvmod.75$lambda.1se,
+                           cvmod.1$lambda.1se),
+                  CV.Error=c(CV.0.ERROR,CV.25.ERROR,CV.5.ERROR,
+                             CV.75.ERROR,CV.1.ERROR))
+
+best.alpha=MOD.RESULT$alpha[which.min(MOD.RESULT$CV.Error)]
+best.lambda=MOD.RESULT$lambda[which.min(MOD.RESULT$CV.Error)]
+
+best.mod=glmnet(y=as.factor(y),x=as.matrix(X),
+                nlambda=1,lambda=best.lambda,alpha=best.alpha,
+                family="binomial")
+best.coef2=as.matrix(coef(best.mod))
+
+best.coef2=as.data.frame(best.coef2)
+best.coef2$names=as.factor(rownames(best.coef2))
+best.coef2$names = ordered(best.coef2$names, levels=c('age','family_incomeMiddle income','race3','race4','people_in_house7','people_in_house3','language2','gender2','tv_use8','tv_use2','tv_use3','tv_use4','tv_use5'))
+best.coef2$positive = best.coef2$s0>0
+
+coef.plot2 = best.coef2 %>%
+  filter(s0!=0,names!='(Intercept)')
+
+ggplot(coef.plot2, aes(x=names,y=s0,label=round(s0,3)))+
+  geom_bar(stat="identity",aes(fill=positive)) +
+  geom_text_repel(nudge_y=-5,size=4,aes(color=positive),segment.alpha=0)+
+  scale_y_continuous(limits=c(-1,1.2))+
+  coord_flip() +
+  theme_bw() +
+  theme(legend.position = "none") +
+  scale_x_discrete(labels=c('Age',"Income - Middleclass","Race - White","Race - Black","# in Household - 7","# in Household - 3","Language - Spanish",'Gender - Female',"TV Hours - 0","TV Hours - 2","TV Hours - 3",'TV Hours - 4',"TV Hours - 5+")) +
+  xlab("Variables") +
+  ylab("Model Coefficients") +
+  ggtitle("Non-Zero Variable Coefficients for Model Age 12-19")+
+  labs(caption = "Intercept = -0.34104645") +
+  scale_fill_manual(values=c("red", "navyblue")) +
+  scale_color_manual(values=c("red", "navyblue")) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+
+```
+
+
+Without a doubt, and unsurprisingly, TV usage is the most influential variable for determining computer usage in those aged 12-19. See Figure 4 for the relationship between computer usage and TV usage across all ages. There is a relatively high density of observations in the upper right corner, which indicates those who use a computer and TV for five hours or more per day. Recall that our models test for computer usage above 2 hours. Females in their teens are considerably less likely to use a computer frequently. This is interesting because gender was plucked from the equation of the age 20+ model through regularization. Again, Spanish speakers and larger households are less likely to use computers.
+
+##### FIGURE 4
+```{r comp and tv usage, echo=F, warning=F, message=F,fig.align='center'}
+
+comp = read_csv('PAQ_I.csv')
+
+comp2 = comp %>%
+  select(SEQN,comp_use=PAQ715,tv_use=PAQ710,vigorous_work=PAQ605)
+
+comp2 = comp2 %>%
+  filter(!is.na(comp2$comp_use),!is.na(comp2$tv_use)) %>%
+  filter(comp_use %in% c(0,1,2,3,4,5),tv_use%in% c(0,1,2,3,4,5)) %>%
+  group_by(comp_use,tv_use) %>%
+  summarise(n=n()) %>%
+  group_by(tv_use) %>%
+  mutate(prop=n/sum(n)) %>%
+  ungroup()
+
+comp2$comp_use <- as.factor(comp2$comp_use)
+comp2$tv_use <- as.factor(comp2$tv_use)  
+comp2$comp_use <- factor(comp2$comp_use, levels = c(0,1,2,3,4,5))
+comp2$tv_use <- factor(comp2$tv_use, levels = c(0,1,2,3,4,5))
+
+
+comp2 %>%
+  
+  ggplot(mapping=aes(x=comp_use,y=tv_use)) +
+  
+  geom_tile(mapping=aes(fill=prop)) +
+  
+  labs(title='Computer Usage vs. TV usage',subtitle='excluding those who watch no TV or do not use a computer outside of school',caption='Proportions are normalized by row to show proportion of compute usage in each category of tv usage') +
+  
+  scale_fill_gradient(high='red',low='white') +
+  
+  geom_text(aes(label=round(prop,3))) +
+  scale_x_discrete(breaks=c(0,1,2,3,4,5),labels=c('< 1 hour','1 hour','2 hours','3 hours','4 hours','>5 hours')) +
+  
+  scale_y_discrete(breaks=c(0,1,2,3,4,5),labels=c('< 1 hour','1 hour','2 hours','3 hours','4 hours','> 5 hours')) +
+  
+  theme_classic() +
+  
+  xlab('Computer Usage in last 30 days') +
+  
+  ylab('TV usage in last 30 days') +
+  
+  theme(plot.title=element_text(hjust=0.5),plot.subtitle=element_text(hjust=0.5),plot.caption=element_text(hjust=0.5),axis.line=element_blank(),axis.ticks=element_blank())
+
+```
+
+
+Our methodology to find the best predictors of BMI follows a similar approach to those of our computer usage models. However, we now consider every variable as a continuous numeric variable without pooling demographic data. We standardize all values in the dataset to ensure all the measurements are in the same units. Then, we split our dataset into training and testing sets. The model learns its coefficients solely based on the training set so we may determine the model’s generalizability by having it predict on the testing set. For the training set, we create a matrix with all of the rows as observations and columns as variables. We then use several cross validated models to determine an appropriate alpha-lambda combination to minimize the cross validation error. This process is shown in (Table 3) where it was determined that the best alpha for our model is 0.6 and lambda is 0.1573145. This combination generates the lowest cross validated error, which is 2.808073. When applying the final model to predict on the test data, the cross validated error is 3.032048, which differs from the training error by 0.2241. This minor difference in error implies the model’s ability to predict at a similar accuracy rate on another dataset. We examine the non-zero model coefficients, which show that the model filtered the original 25 variables down to only 7 important variables. 
+
+##### TABLE 3
+```{r train and test chart, echo=F, warning=F,message=F,fig.align='center'}
+
+DEMO = read_csv("DEMO_I.csv")
+DR2TOT = read_csv("DR2TOT_I.csv")
+BMX = read_csv("BMX_I.csv")
+# selecting potential variables 
+DR2TOT_filtered = DR2TOT %>% select(SEQN, Energy = DR2TKCAL, Protein = DR2TPROT, Carbohydrate = DR2TCARB, `Total Sugars` =  DR2TSUGR,`Dietary Fiber` = DR2TFIBE, `Total Fat`=DR2TTFAT, `Total Polyunsaturated Fatty Acids` = DR2TPFAT, Cholesterol =DR2TCHOL, `Alpha-carotene` = DR2TACAR, `Beta-cryptoxanthin` =DR2TCRYP,`Thiamin (Vitamin B1)`= DR2TVB1, `Riboflavin (Vitamin B2)` = DR2TVB2,Niacin = DR2TNIAC,`Vitamin C` =DR2TVC,`Vitamin D` = DR2TVD, `Sodium` = DR2TSODI, Caffeine = DR2TCAFF) 
+
+DEMO_filtered = DEMO %>% select(SEQN, `gender` =RIAGENDR, `Age` =RIDAGEYR)  
+
+BMX_filtered = BMX %>% select(SEQN, BMXBMI,`Upper Leg Length` =BMXLEG,`Upper Arm Length` = BMXARML,`Arm Circumference` = BMXARMC,`Waist Circumference` = BMXWAIST,`Average Sagittal Abdominal Diameter` = BMDAVSAD)
+
+gender_filtered = DEMO %>% select(SEQN, `gender`= RIAGENDR,`Age` =RIDAGEYR) %>% mutate(`Gender` = (`gender`-1.505745)/0.5000222) %>% select(-`gender`)
+
+NHANES_diet_demo = left_join(DEMO_filtered, DR2TOT_filtered, by = "SEQN") 
+NHANES_diet_demo_bmx = right_join(BMX_filtered, NHANES_diet_demo, by="SEQN") %>% select(-SEQN) %>%
+  na.omit()
+NHANES_diet_demo_bmx$BMXBMI = as.character(NHANES_diet_demo_bmx$BMXBMI)
+
+NHANES_diet_demo_gen =  left_join(gender_filtered, DR2TOT_filtered, by = "SEQN") %>% na.omit()
+NHANES_diet_demo_gen_bmx = right_join(BMX_filtered, NHANES_diet_demo_gen, by="SEQN") %>% select(-SEQN) %>% na.omit()
+NHANES_diet_demo_gen_bmx$BMXBMI = as.character(NHANES_diet_demo_gen_bmx$BMXBMI)
+NHANES_diet_demo_gen_bmx$BMXBMI = as.character(NHANES_diet_demo_gen_bmx$BMXBMI)
+NHANES_diet_demo_gen_bmx_std = standardize(NHANES_diet_demo_gen_bmx)
+
+set.seed(216)
+NHANES_diet_demo_gen_bmx_std = standardize(NHANES_diet_demo_gen_bmx)
+NHANES_diet_demo_gen_bmx_std$BMXBMI = as.numeric(NHANES_diet_demo_gen_bmx_std$BMXBMI)
+NHANES_diet_demo_gen_bmx_std$SPLIT = sample(x=c("TRAIN","TEST"), size=5353, replace = T,prob=c(.85,.15))
+TRAINstd = NHANES_diet_demo_gen_bmx_std %>% filter(SPLIT =="TRAIN") %>% select(-"SPLIT")
+TESTstd = NHANES_diet_demo_gen_bmx_std %>% filter(SPLIT =="TEST") %>% select(-"SPLIT")
+
+BMI_only = BMX %>% select(SEQN, BMXBMI)
+NHANES_diet_only = left_join(BMI_only,  DR2TOT_filtered, by = "SEQN") %>% select(-SEQN) %>% na.omit()
+
+set.seed(216)
+NHANES_diet_demo_bmx$SPLIT = sample(x=c("TRAIN","TEST"), size=5353, replace = T,prob=c(.85,.15))
+TRAIN = NHANES_diet_demo_bmx %>% filter(SPLIT =="TRAIN") %>% select(-"SPLIT")
+TEST = NHANES_diet_demo_bmx %>% filter(SPLIT =="TEST") %>% select(-"SPLIT")
+
+DATA=TRAINstd
+DATA2=DATA[]
+y=DATA2$BMXBMI
+X=model_matrix(DATA2,BMXBMI~.)[,-1]
+var.names=names(X)
+
+
+DATATEST = TESTstd
+DATATEST$BMXBMI = as.numeric(DATATEST$BMXBMI)
+
+
+yTest = DATATEST$BMXBMI
+XTest = model_matrix(DATATEST, BMXBMI~.)[,-1]
+
+RMSE.func=function(actual,predict){
+  rmse = sqrt(mean((actual - predict)^2, na.rm = TRUE))
+  return(rmse)
+}
+
+set.seed(216)
+cvmod.00=cv.glmnet(y=y,x=as.matrix(X),alpha=0, standardize = F)
+set.seed(216)
+cvmod.01=cv.glmnet(y=y,x=as.matrix(X),alpha=0.1, standardize = F)
+set.seed(216)
+cvmod.02=cv.glmnet(y=y,x=as.matrix(X),alpha=0.2, standardize = F)
+set.seed(216)
+cvmod.03=cv.glmnet(y=y,x=as.matrix(X),alpha=0.3, standardize = F)
+set.seed(216)
+cvmod.04=cv.glmnet(y=y,x=as.matrix(X),alpha=0.4, standardize = F)
+set.seed(216)
+cvmod.05=cv.glmnet(y=y,x=as.matrix(X),alpha=0.5, standardize = F)
+set.seed(216)
+cvmod.06=cv.glmnet(y=y,x=as.matrix(X),alpha=0.6, standardize = F)
+set.seed(216)
+cvmod.07=cv.glmnet(y=y,x=as.matrix(X),alpha=0.7, standardize = F)
+set.seed(216)
+cvmod.08=cv.glmnet(y=y,x=as.matrix(X),alpha=0.8, standardize = F)
+set.seed(216)
+cvmod.09=cv.glmnet(y=y,x=as.matrix(X),alpha=0.9, standardize = F)
+set.seed(216)
+cvmod.10=cv.glmnet(y=y,x=as.matrix(X),alpha=1, standardize = F)
+
+CV.00.ERROR=cvmod.00$cvm[which(cvmod.00$lambda==cvmod.00$lambda.1se)]
+CV.01.ERROR=cvmod.01$cvm[which(cvmod.01$lambda==cvmod.01$lambda.1se)]
+CV.02.ERROR=cvmod.02$cvm[which(cvmod.02$lambda==cvmod.02$lambda.1se)]
+CV.03.ERROR=cvmod.03$cvm[which(cvmod.03$lambda==cvmod.03$lambda.1se)]
+CV.04.ERROR=cvmod.04$cvm[which(cvmod.04$lambda==cvmod.04$lambda.1se)]
+CV.05.ERROR=cvmod.05$cvm[which(cvmod.05$lambda==cvmod.05$lambda.1se)]
+CV.06.ERROR=cvmod.06$cvm[which(cvmod.06$lambda==cvmod.06$lambda.1se)]
+CV.07.ERROR=cvmod.07$cvm[which(cvmod.07$lambda==cvmod.07$lambda.1se)]
+CV.08.ERROR=cvmod.08$cvm[which(cvmod.08$lambda==cvmod.08$lambda.1se)]
+CV.09.ERROR=cvmod.09$cvm[which(cvmod.09$lambda==cvmod.09$lambda.1se)]
+CV.10.ERROR=cvmod.10$cvm[which(cvmod.10$lambda==cvmod.10$lambda.1se)]
+
+
+
+set.seed(216)
+cvmodTest.00=cv.glmnet(y=yTest,x=as.matrix(XTest),alpha=0, standardize = F)
+set.seed(216)
+cvmodTest.01=cv.glmnet(y=yTest,x=as.matrix(XTest),alpha=0.1, standardize = F)
+set.seed(216)
+cvmodTest.02=cv.glmnet(y=yTest,x=as.matrix(XTest),alpha=0.2, standardize = F)
+set.seed(216)
+cvmodTest.03=cv.glmnet(y=yTest,x=as.matrix(XTest),alpha=0.3, standardize = F)
+set.seed(216)
+cvmodTest.04=cv.glmnet(y=yTest,x=as.matrix(XTest),alpha=0.4, standardize = F)
+set.seed(216)
+cvmodTest.05=cv.glmnet(y=yTest,x=as.matrix(XTest),alpha=0.5, standardize = F)
+set.seed(216)
+cvmodTest.06=cv.glmnet(y=yTest,x=as.matrix(XTest),alpha=0.6, standardize = F)
+set.seed(216)
+cvmodTest.07=cv.glmnet(y=yTest,x=as.matrix(XTest),alpha=0.7, standardize = F)
+set.seed(216)
+cvmodTest.08=cv.glmnet(y=yTest,x=as.matrix(XTest),alpha=0.8, standardize = F)
+set.seed(216)
+cvmodTest.09=cv.glmnet(y=yTest,x=as.matrix(XTest),alpha=0.9, standardize = F)
+set.seed(216)
+cvmodTest.10=cv.glmnet(y=yTest,x=as.matrix(XTest),alpha=1.0, standardize = F)
+
+CV.00.ERRORTest=cvmodTest.00$cvm[which(cvmod.00$lambda==cvmod.00$lambda.1se)]
+CV.01.ERRORTest=cvmodTest.01$cvm[which(cvmod.01$lambda==cvmod.01$lambda.1se)]
+CV.02.ERRORTest=cvmodTest.02$cvm[which(cvmod.02$lambda==cvmod.02$lambda.1se)]
+CV.03.ERRORTest=cvmodTest.03$cvm[which(cvmod.03$lambda==cvmod.03$lambda.1se)]
+CV.04.ERRORTest=cvmodTest.04$cvm[which(cvmod.04$lambda==cvmod.04$lambda.1se)]
+CV.05.ERRORTest=cvmodTest.05$cvm[which(cvmod.05$lambda==cvmod.05$lambda.1se)]
+CV.06.ERRORTest=cvmodTest.06$cvm[which(cvmod.06$lambda==cvmod.06$lambda.1se)]
+CV.07.ERRORTest=cvmodTest.07$cvm[which(cvmod.07$lambda==cvmod.07$lambda.1se)]
+CV.08.ERRORTest=cvmodTest.08$cvm[which(cvmod.08$lambda==cvmod.08$lambda.1se)]
+CV.09.ERRORTest=cvmodTest.09$cvm[which(cvmod.09$lambda==cvmod.09$lambda.1se)]
+CV.10.ERRORTest=cvmodTest.10$cvm[which(cvmod.10$lambda==cvmod.10$lambda.1se)]
+
+
+MOD.RESULT=tibble(alpha=c(0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1.0),
+                  lambda=c(cvmod.00$lambda.1se,cvmod.01$lambda.1se,
+                           cvmod.02$lambda.1se,cvmod.03$lambda.1se,
+                           cvmod.04$lambda.1se,cvmod.05$lambda.1se,cvmod.06$lambda.1se,
+                           cvmod.07$lambda.1se,cvmod.08$lambda.1se,
+                           cvmod.09$lambda.1se,cvmod.10$lambda.1se),
+                  CV.Error=c(CV.00.ERROR,CV.01.ERROR,CV.02.ERROR,
+                             CV.03.ERROR,CV.04.ERROR,CV.05.ERROR,CV.06.ERROR,CV.07.ERROR,
+                             CV.08.ERROR,CV.09.ERROR,CV.10.ERROR),
+                  CV.ErrorTest=c(CV.00.ERRORTest,CV.01.ERRORTest,CV.02.ERRORTest,CV.03.ERRORTest,
+                                 CV.04.ERRORTest,CV.05.ERRORTest,CV.06.ERRORTest,
+                                 CV.07.ERRORTest,CV.08.ERRORTest,CV.09.ERRORTest,
+                                 CV.10.ERRORTest))
+MOD.RESULT.TABLE=tibble(alpha=c(0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1.0),
+                  lambda=c(cvmod.00$lambda.1se,cvmod.01$lambda.1se,
+                           cvmod.02$lambda.1se,cvmod.03$lambda.1se,
+                           cvmod.04$lambda.1se,cvmod.05$lambda.1se,cvmod.06$lambda.1se,
+                           cvmod.07$lambda.1se,cvmod.08$lambda.1se,
+                           cvmod.09$lambda.1se,cvmod.10$lambda.1se),
+                  "Train Error"=c(CV.00.ERROR,CV.01.ERROR,CV.02.ERROR,
+                             CV.03.ERROR,CV.04.ERROR,CV.05.ERROR,CV.06.ERROR,CV.07.ERROR,
+                             CV.08.ERROR,CV.09.ERROR,CV.10.ERROR),
+                  "Test Error"=c(CV.00.ERRORTest,CV.01.ERRORTest,CV.02.ERRORTest,CV.03.ERRORTest,
+                                 CV.04.ERRORTest,CV.05.ERRORTest,CV.06.ERRORTest,
+                                 CV.07.ERRORTest,CV.08.ERRORTest,CV.09.ERRORTest,
+                                 CV.10.ERRORTest))
+
+MOD.RESULT.TABLE %>% 
+  kable() %>% 
+  kable_styling(bootstrap_options = c("striped",  "responsive"), fixed_thead = T,  full_width = F) %>%
+  add_header_above(c("Parameters" = 2, "Cross Validation Error" = 2 ), font_size = 15)%>%
+  row_spec(7, bold = T, background = "#d6e7ff", color ="black") %>%
+  row_spec(0, align="c", font_size = 14) %>%
+  column_spec(2, border_right = T) %>%
+  row_spec(c(1,3,5,9,11), background = "#ebf3ff") %>%
+  row_spec(1:11, font_size = 14, align = "c") %>%
+  kable_styling(bootstrap_options = c("hover"))%>%
+  footnote(general = "This figure shows the best lambda values that match the corresponding alpha value and the resulting cross validation error when comparing the model to the training and testing datasets. The bolded row displays the parameter combination alpha = 0.6 and lambda = 0.157 we selected to proceed in modeling with because it minimized the training error the most. When this model was applied to the testing dataset, the test error was .227 greater than the train error. This emphasizes how well the model predicts on different subsets of data. ",
+            
+           footnote_as_chunk = T, title_format = c("italic", "underline")
+           )
+
+
+
+```
+
+##### FIGURE 5
+```{r BMI model coeffs, echo=F,warning=F,message=F,fig.align='center'}
+
+sd_mean = tibble(names=names(X), mean = NA, sd = NA)
+sd_mean$sd = apply(X, 2, sd)
+sd_mean$mean = apply(X, 2, mean)
+sd_mean$m_over_sd = apply(sd_mean, 1, function(x) (as.numeric(x[2])/as.numeric(x[3])))
+# sd_mean
+
+best.alpha=MOD.RESULT$alpha[which.min(MOD.RESULT$CV.Error)]
+best.lambda=MOD.RESULT$lambda[which.min(MOD.RESULT$CV.Error)]
+
+best.mod=glmnet(y=y,x=as.matrix(X),nlambda=1,lambda=best.lambda,alpha=best.alpha)
+best.coef=as.tibble(as.matrix(coef(best.mod)))
+best.coef2a = best.coef %>% mutate(Parameter=c("Int",var.names)) %>%
+              rename(Estimate=s0) %>%
+              select(Parameter,Estimate) %>% arrange(desc(abs(Estimate)))
+best.coef2=best.coef %>% 
+              mutate(Parameter=c("Int",var.names)) %>%
+              rename(Estimate=s0) %>%
+              select(Parameter,Estimate) %>% filter(Parameter != "Int") %>% mutate(mean = sd_mean$mean, sd = sd_mean$sd, mean_over_sd = sd_mean$m_over_sd, est_times_sd = Estimate*sd, std_int = est_times_sd*sd_mean$m_over_sd)
+# sum(best.coef2$std_int)
+
+
+
+nonzero.best.coef2=best.coef2 %>%
+                    filter(Estimate!=0)
+zero.best.coef=best.coef2
+# print(nonzero.best.coef2,n=1e3)
+nonzero.best.coef2 = nonzero.best.coef2 %>% arrange(abs(est_times_sd))
+nonzero.best.coef2a=best.coef2a %>%
+                    filter(Estimate!=0)
+
+
+
+
+best.coef2a=as.data.frame(best.coef2)
+best.coef2a$names=c("Upper Leg Length","Upper Arm Length","Arm Circumference","Waist Circumference","Avg Sagittal Abdominal Diameter","Age","Gender","Energy", "Protein", "Carbohydrate", "Total Sugars", "Dietary Fiber", "Total Fat", "Total Polyunsaturated Fatty Acids","Cholesterol", "Alpha-Carotene", "Beta-Cryptoxanthin","Thiamin (Vitamin B1)","Riboflavin (Vitamin B2)","Niacin", "Vitamin C","Vitamin D", "Sodium","Caffiene")
+# best.coef2a$names=as.factor(best.coef2a$Parameter)
+
+best.coef2a$positive = best.coef2a$est_times_sd>0
+
+coef.plot2a = best.coef2a %>%
+  filter(est_times_sd< - 0.1| est_times_sd>0.05,Parameter!='Int')
+
+ggplot(coef.plot2a,aes(x = reorder(names, abs(Estimate)), y=Estimate, label = round(Estimate,3)))+
+  geom_bar(aes(fill = positive ),stat="identity") +
+  geom_text_repel( nudge_y = -5, size = 4, segment.size = 0,segment.alpha = 0, aes(color = positive)) +
+  scale_y_continuous(limits = c(-1.5,3.4)) +
+  coord_flip() +
+  theme_bw() +
+  theme(legend.position = "none") +
+  xlab("Variables") +
+  ylab("Model Coefficients")+
+  ggtitle("Standardized Variable Coefficients for BMI Model")+
+  scale_fill_manual(values=c("red", "navyblue")) +
+  scale_color_manual(values=c("red", "navyblue"))+
+  labs(caption = "Intercept = 27.6647552603") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+
+```
+
+
+Evaluating the standardized variable coefficients (see Figure 5), we notice that many body measurements are strong predictor variables for predicting BMI. Arm circumference is the most influential variable for predicting BMI in this model. Its coefficient implies that the predicted BMI value will increase by 3.254 kilograms per meters squared when the arm circumference value increases by one standard deviation. Figure 6 emphasizes the positive linear relationship between BMI and arm circumference color coded by gender. Waist circumference and the average sagittal abdominal diameter also play important roles in this model, increasing the BMI value by 2.86 and 1.9, respectively, for every standard deviation they increase by. Given that BMI is a measure of body fat, it makes sense why other body measurements would have strong relationships with predicting BMI itself. A small arm circumference tends to relate to someone who has less body fat and will have a low BMI value. On the other hand, a large arm circumference will generally relate to an estimate of more body fat. Likewise, the increase in a person’s waist circumference tends to relate to an increase in body fat, since body fat has a tendency to build up around the abdominal area. Other than body measurement variables, age and gender show influence in predicting BMI, as well. Age unexpectedly has a slight negative relationship with BMI, as it will decrease the BMI by .818 as it increases by a standard deviation. However, this might be due to the human’s tendency of losing lean mass as they grow older. Their overall weight may decrease and BMI may misinterpret the decrease as a decrease in body fat, as well. Furthermore, there is no diet or nutrition related variable present in the list of non-zero coefficients. When modeling BMI using only the dietary variables, the lowest cross validation measure of error is 59.584. This explains that the one day of nutrient intake information per respondent does not show a significant relationship with BMI. 
+
+##### FIGURE 6
+```{r BMI arm circum., echo=F,warning=F,message=F,fig.align='center'}
+
+DEMO = read_csv("DEMO_I.csv")
+
+DR2TOT = read_csv("DR2TOT_I.csv")
+
+BMX = read_csv("BMX_I.csv")
+
+DR2TOT_filtered = DR2TOT %>% 
+  select(SEQN, DR2TKCAL, DR2TPROT, DR2TCARB, DR2TSUGR, DR2TFIBE, DR2TTFAT, DR2TPFAT, DR2TCHOL, DR2TACAR, DR2TCRYP, DR2TVB1, DR2TVB2, DR2TNIAC,DR2TVC,DR2TVD,DR2TSODI,DR2TCAFF)
+
+DEMO_filtered = DEMO %>% 
+  select(SEQN, RIAGENDR, RIDAGEYR,RIDRETH1,DMDFMSIZ)  
+
+BMX_filtered = BMX %>% 
+  select(SEQN, BMXBMI,BMXLEG,BMXARML,BMXARMC,BMXWAIST,BMDAVSAD)
+
+NHANES_diet_demo = left_join(DEMO_filtered, DR2TOT_filtered, by = "SEQN") %>%
+  na.omit()
+
+NHANES_diet_demo_bmx = right_join(BMX_filtered, NHANES_diet_demo, by="SEQN") %>% 
+  select(-SEQN) %>%
+  na.omit()
+
+NHANES_diet_demo_bmx$RIAGENDR <- as.factor(NHANES_diet_demo_bmx$RIAGENDR)
+
+levels(NHANES_diet_demo_bmx$RIAGENDR) <- c("Male","Female")
+
+
+# Make new datasets which each contains only obs. for one gender
+
+NHANES_diet_demo_male <- NHANES_diet_demo_bmx %>%
+  filter(RIAGENDR == "Male")
+
+
+NHANES_diet_demo_female <- NHANES_diet_demo_bmx %>%
+  filter(RIAGENDR == "Female")
+
+ggplot()+
+  geom_point(data = NHANES_diet_demo_bmx, mapping = aes(x = BMXARMC, y = BMXBMI, color = RIAGENDR), alpha = 0.8)+
+  geom_smooth(data = NHANES_diet_demo_male, mapping = aes(x = BMXARMC, y = BMXBMI), color =  "blue")+
+  geom_smooth(data = NHANES_diet_demo_female, mapping = aes(x = BMXARMC, y = BMXBMI), color = "red")+
+  xlab("Arm Circumference (cm)")+
+  ylab("BMI")+
+  theme_bw()+
+  scale_color_manual(values = c("lightblue", "pink"))+
+  ggtitle('Relationship between BMI, Arm Circumference, and Gender') +
+  labs(color = "Gender") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+
+
+# CONCLUSION
+
+Our initial question was to determine what audience a computer manufacturing business should target. Industries can apply the results to create specific advertisement strategies guided towards selected audience groups. From our models, we learn that individuals younger than 20 who watch a lot of television also use a computer frequently. For individuals 20 and above, education level is the best predictor of their computer usage. A company could use these relationships to determine what kind of advertisement best suits its target audience. For example, for a younger target audience, computer companies could create advertisements on apps like Hulu or Youtube. To market towards an older audience, companies could advertise to colleges or universities. Computer manufacturers may want to look into specific TV viewer data in relation to computer usage and demographics. They might benefit from having their ads appear only with TV shows of a certain genre within an app like Hulu.
+
+We were also interested in determining a method to predict the BMI of an individual who cannot get their height or weight calculated. Through data analysis, we learn that the biggest predictors of BMI are arm circumference and waist circumference. This information is most applicable in hospitals or medical centers. For patients who are bedridden or handicapped, when their height and/or weight cannot be accurately obtained, it can be difficult to calculate their BMI. Instead, the patients’ arm and waist circumferences can be easily obtained. These measurements still provide a strong predictor of their BMI value. Having this BMI estimate can also help design a proper treatment plan for a patient who is malnourished or obese. Additionally, a person’s eating habits for one day may not be an accurate depiction of their overall lifestyle and dietary habits. Although we examined respondents’ dietary information over one day and the variables show to be insignificant in predicting BMI, it may be useful to consider modeling with dietary data for a longer period of time. Therefore, modeling with data on respondents’ weekly diets is a potential topic for further investigation. This information could also be obtained by observing data collected on food/fitness tracking apps.
+
+
+
+
+
+
+
+
